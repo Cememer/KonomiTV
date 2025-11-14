@@ -57,6 +57,7 @@ LIBRARY_EXTENSION = ('.exe' if sys.platform == 'win32' else '.elf')
 LIBRARY_PATH = {
     'Akebi': str(LIBRARY_DIR / 'Akebi/akebi-https-server') + LIBRARY_EXTENSION,
     'FFmpeg': str(LIBRARY_DIR / 'FFmpeg/ffmpeg') + LIBRARY_EXTENSION,
+    'FFmpeg-RPi-HW': str(LIBRARY_DIR / 'FFmpeg-RPi/ffmpeg') + LIBRARY_EXTENSION,
     'FFprobe': str(LIBRARY_DIR / 'FFmpeg/ffprobe') + LIBRARY_EXTENSION,
     'QSVEncC': str(LIBRARY_DIR / 'QSVEncC/QSVEncC') + LIBRARY_EXTENSION,
     'NVEncC': str(LIBRARY_DIR / 'NVEncC/NVEncC') + LIBRARY_EXTENSION,

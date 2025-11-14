@@ -108,7 +108,7 @@ class _ServerSettingsGeneral(BaseModel):
     always_receive_tv_from_mirakurun: bool = False
     edcb_url: Annotated[Url, UrlConstraints(allowed_schemes=['tcp'])] = Url('tcp://127.0.0.1:4510/')
     mirakurun_url: Annotated[Url, UrlConstraints(allowed_schemes=['http', 'https'])] = Url('http://127.0.0.1:40772/')
-    encoder: Literal['FFmpeg', 'QSVEncC', 'NVEncC', 'VCEEncC', 'rkmppenc'] = 'FFmpeg'
+    encoder: Literal['FFmpeg', 'FFmpeg-RPi-HW', 'QSVEncC', 'NVEncC', 'VCEEncC', 'rkmppenc'] = 'FFmpeg'
     program_update_interval: Annotated[float, confloat(ge=0.1)] = 5.0
     debug: bool = False
     debug_encoder: bool = False
@@ -222,7 +222,7 @@ class _ServerSettingsGeneral(BaseModel):
             )
         # HWEncC が指定されているときのみ、--check-hw でハードウェアエンコーダーが利用できるかをチェック
         ## もし利用可能なら標準出力に "H.264/AVC" という文字列が出力されるので、それで判定する
-        if encoder != 'FFmpeg':
+        if encoder != 'FFmpeg' or encoder != 'FFmpeg-RPi-HW':
             result = subprocess.run(
                 [LIBRARY_PATH[encoder], '--check-hw'],
                 stdout = subprocess.PIPE,

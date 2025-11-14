@@ -116,6 +116,7 @@ class LiveEncodingTask:
 
     def buildFFmpegOptions(self,
         quality: QUALITY_TYPES,
+        encoder_type: Literal['FFmpeg','FFmpeg-RPi-HW'],
         channel_type: Literal['GR', 'BS', 'CS', 'CATV', 'SKY', 'BS4K'],
         is_fullhd_channel: bool,
     ) -> list[str]:
@@ -124,6 +125,7 @@ class LiveEncodingTask:
 
         Args:
             quality (QUALITY_TYPES): 映像の品質
+            encoder_type (Literal['FFmpeg', 'FFmpeg-RPi-HW']): エンコーダー (FFmpeg or FFmpeg-RPi-HW)
             channel_type (Literal['GR', 'BS', 'CS', 'CATV', 'SKY', 'BS4K']): チャンネルの種類
             is_fullhd_channel (bool): フル HD 放送が実施されているチャンネルかどうか
 
@@ -142,6 +144,11 @@ class LiveEncodingTask:
             analyzeduration += 200000
 
         # 入力
+        ## ラズパイ用
+        ## H.265/HEVC入力時にハードウェアデコーダーを使えるようにする (BS4K環境が無いため放送に使えるかは不明)
+        ## https://github.com/jc-kynesim/rpi-ffmpeg/pull/3#issuecomment-772447747
+        if encoder_type == 'FFmpeg-RPi-HW':
+            options.append('-no_cvt_hw -hwaccel drm')
         ## -analyzeduration をつけることで、ストリームの分析時間を短縮できる
         options.append(f'-f mpegts -analyzeduration {analyzeduration} -i pipe:0')
 
@@ -158,24 +165,35 @@ class LiveEncodingTask:
 
         # 映像
         ## コーデック
-        if QUALITY[quality].is_hevc is True:
-            options.append('-vcodec libx265')  # H.265/HEVC (通信節約モード)
+        if encoder_type == 'FFmpeg-RPi-HW':
+            if QUALITY[quality].is_hevc is True:
+                options.append('-vcodec h265_v4l2m2m')  # H.265/HEVC (使用不可なハードウェアエンコーダー、通信節約モード)
+            else:
+                options.append('-vcodec h264_v4l2m2m')  # H.264 (ハードウェアエンコーダー)
         else:
-            options.append('-vcodec libx264')  # H.264
+            if QUALITY[quality].is_hevc is True:
+                options.append('-vcodec libx265')  # H.265/HEVC (通信節約モード)
+            else:
+                options.append('-vcodec libx264')  # H.264
 
         ## ビットレートと品質
         options.append(f'-flags +cgop -vb {QUALITY[quality].video_bitrate} -maxrate {QUALITY[quality].video_bitrate_max}')
-        options.append('-preset veryfast -aspect 16:9')
-        if QUALITY[quality].is_hevc is True:
-            options.append('-profile:v main')
-        else:
-            options.append('-profile:v high')
+        options.append('-aspect 16:9')
 
-        ## フル HD 放送が行われているチャンネルかつ、指定された品質の解像度が 1440×1080 (1080p) の場合のみ、
+        ## Preset / Profile系はv4l2m2mは非対応
+        if encoder_type == 'FFmpeg':
+            options.append('-preset veryfast')
+            if QUALITY[quality].is_hevc is True:
+                options.append('-profile:v main')
+            else:
+                options.append('-profile:v high')
+
+        ## 指定された品質の解像度が 1440×1080 (1080p) の場合のみ、
         ## 特別に縦解像度を 1920 に変更してフル HD (1920×1080) でエンコードする
+        ## ラズパイのハードウェアエンコーダーではaspectが効かない？ので、フルHDチャンネルでは無くても1920×1080でエンコードする
         video_width = QUALITY[quality].width
         video_height = QUALITY[quality].height
-        if video_width == 1440 and video_height == 1080 and is_fullhd_channel is True:
+        if video_width == 1440 and video_height == 1080 and (encoder_type == 'FFmpeg-RPi-HW' or is_fullhd_channel is True):
             video_width = 1920
 
         ## 最大 GOP 長 (秒)
@@ -191,6 +209,7 @@ class LiveEncodingTask:
             options.append(f'-r 60000/1001 -g {int(gop_length_second * 60)}')
         else:
             ## インターレース解除 (60i → 60p (フレームレート: 60fps))
+            ## ＊ラズパイでは1080p60でのエンコードは現状不可
             if QUALITY[quality].is_60fps is True:
                 options.append(f'-vf yadif=mode=1:parity=-1:deint=1,scale={video_width}:{video_height}')
                 options.append(f'-r 60000/1001 -g {int(gop_length_second * 60)}')
@@ -624,19 +643,19 @@ class LiveEncodingTask:
             ENCODER_TYPE = 'FFmpeg'
 
         # FFmpeg
-        if ENCODER_TYPE == 'FFmpeg':
+        if ENCODER_TYPE == 'FFmpeg' or ENCODER_TYPE == 'FFmpeg-RPi-HW':
 
             # オプションを取得
             # ラジオチャンネルかどうかでエンコードオプションを切り替え
             if channel.is_radiochannel is True:
                 encoder_options = self.buildFFmpegOptionsForRadio()
             else:
-                encoder_options = self.buildFFmpegOptions(self.live_stream.quality, channel.type, is_fullhd_channel)
+                encoder_options = self.buildFFmpegOptions(self.live_stream.quality, ENCODER_TYPE, channel.type, is_fullhd_channel)
             logging.info(f'[Live: {self.live_stream.live_stream_id}] FFmpeg Commands:\nffmpeg {" ".join(encoder_options)}')
 
             # エンコーダープロセスを非同期で作成・実行
             encoder = await asyncio.subprocess.create_subprocess_exec(
-                *[LIBRARY_PATH['FFmpeg'], *encoder_options],
+                *[LIBRARY_PATH[ENCODER_TYPE], *encoder_options],
                 stdin = tsreadex_read_pipe,  # tsreadex からの入力
                 stdout = asyncio.subprocess.PIPE,  # ストリーム出力
                 stderr = asyncio.subprocess.PIPE,  # ログ出力
@@ -1056,7 +1075,7 @@ class LiveEncodingTask:
                 # 誤作動防止のため、ステータスが Standby の間のみ更新できるようにする
                 if live_stream_status.status == 'Standby':
                     # FFmpeg
-                    if ENCODER_TYPE == 'FFmpeg':
+                    if ENCODER_TYPE == 'FFmpeg' or ENCODER_TYPE == 'FFmpeg-RPi-HW':
                         if 'arib parser was created' in line or 'Invalid frame dimensions 0x0.' in line:
                             self.live_stream.setStatus('Standby', 'エンコードを開始しています…')
                         elif 'frame=    1 fps=0.0 q=0.0' in line or 'size=       0kB time=00:00' in line:
@@ -1083,7 +1102,7 @@ class LiveEncodingTask:
                 # 特定のエラーログが出力されている場合は回復が見込めないため、エンコーダーを終了する
                 ## エンコーダーを再起動することで回復が期待できる場合は、ステータスを Restart に設定しエンコードタスクを再起動する
                 ## FFmpeg
-                if ENCODER_TYPE == 'FFmpeg':
+                if ENCODER_TYPE == 'FFmpeg' or ENCODER_TYPE == 'FFmpeg-RPi-HW':
                     if 'Stream map \'0:v:0\' matches no streams.' in line:
                         # 何らかの要因で tsreadex から放送波が受信できなかったことによるエラーのため、エンコーダーの再起動は行わない
                         ## 番組名に「放送休止」などが入っていれば停波によるものとみなし、そうでないなら放送波の受信に失敗したものとする

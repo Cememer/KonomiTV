@@ -69,6 +69,7 @@ class VideoEncodingTask:
 
     def buildFFmpegOptions(self,
         quality: QUALITY_TYPES,
+        encoder_type: Literal['FFmpeg','FFmpeg-RPi-HW'],
         output_ts_offset: float,
     ) -> list[str]:
         """
@@ -76,6 +77,7 @@ class VideoEncodingTask:
 
         Args:
             quality (QUALITY_TYPES): 映像の品質
+            encoder_type (Literal['FFmpeg', 'FFmpeg-RPi-HW']): エンコーダー (FFmpeg or FFmpeg-RPi-HW)
             output_ts_offset (float): 出力 TS のタイムスタンプオフセット (秒)
 
         Returns:
@@ -93,6 +95,11 @@ class VideoEncodingTask:
 
         # 入力
         ## -analyzeduration をつけることで、ストリームの分析時間を短縮できる
+        ## ラズパイ用
+        ## H.265/HEVC入力時にハードウェアデコーダーを使えるようにする
+        ## https://github.com/jc-kynesim/rpi-ffmpeg/pull/3#issuecomment-772447747
+        if encoder_type == 'FFmpeg-RPi-HW':
+            options.append('-no_cvt_hw -hwaccel drm')
         options.append(f'-f mpegts -analyzeduration {analyzeduration} -i pipe:0')
 
         # ストリームのマッピング
@@ -105,35 +112,52 @@ class VideoEncodingTask:
         ## 録画再生では逆に大きめでないと映像/音声のずれが大きくなりセグメント分割時に問題が生じるため、
         ## 5000K (5秒) に設定し、リトライ回数に応じて 1000K (1秒) ずつ増やす
         max_interleave_delta = round(5000 + (self._retry_count * 1000))
-        options.append(f'-fflags nobuffer -flags low_delay -max_delay 0 -tune zerolatency -max_interleave_delta {max_interleave_delta}K -threads auto')
+        options.append(f'-fflags nobuffer -flags low_delay -max_delay 0 -max_interleave_delta {max_interleave_delta}K -threads auto')
+        if encoder_type == 'FFmpeg':
+            options.append('-tune zerolatency')
 
         # 映像
         ## コーデック
-        if QUALITY[quality].is_hevc is True:
-            options.append('-vcodec libx265')  # H.265/HEVC (通信節約モード)
+        if encoder_type == 'FFmpeg-RPi-HW':
+            if QUALITY[quality].is_hevc is True:
+                options.append('-vcodec h265_v4l2m2m')  # H.265/HEVC (使用不可なハードウェアエンコーダー、通信節約モード)
+            else:
+                options.append('-vcodec h264_v4l2m2m')  # H.264 (ハードウェアエンコーダー)
         else:
-            options.append('-vcodec libx264')  # H.264
+            if QUALITY[quality].is_hevc is True:
+                options.append('-vcodec libx265')  # H.265/HEVC (通信節約モード)
+            else:
+                options.append('-vcodec libx264')  # H.264
 
         ## ビットレートと品質
-        options.append(f'-flags +cgop+global_header -vb {QUALITY[quality].video_bitrate} -maxrate {QUALITY[quality].video_bitrate_max}')
-        options.append('-preset veryfast -aspect 16:9 -pix_fmt:v yuv420p')
-        if QUALITY[quality].is_hevc is True:
-            options.append('-profile:v main')
+        options.append(f'-vb {QUALITY[quality].video_bitrate} -maxrate {QUALITY[quality].video_bitrate_max}')
+        options.append('-aspect 16:9')
+
+        ## v4l2m2mで非対応なオプション
+        if encoder_type == 'FFmpeg':
+            options.append('-flags +cgop+global_header -preset veryfast -pix_fmt:v yuv420p')
+            if QUALITY[quality].is_hevc is True:
+                options.append('-profile:v main')
+            else:
+                options.append('-profile:v high')
         else:
-            options.append('-profile:v high')
+            options.append('-flags +cgop')
 
         ## 指定された品質の解像度が 1440×1080 (1080p) かつ入力ストリームがフル HD (1920×1080) の場合のみ、
         ## 特別に縦解像度を 1920 に変更してフル HD (1920×1080) でエンコードする
+        ## ラズパイのハードウェアエンコーダーではaspectが効かない？ので、フルHDチャンネルでは無くても1920×1080でエンコードする
         video_width = QUALITY[quality].width
         video_height = QUALITY[quality].height
         if (video_width == 1440 and video_height == 1080) and \
+            (encoder_type == 'FFmpeg-RPi-HW' or \
             (self.video_stream.recorded_program.recorded_video.video_resolution_width == 1920 and \
-             self.video_stream.recorded_program.recorded_video.video_resolution_height == 1080):
+             self.video_stream.recorded_program.recorded_video.video_resolution_height == 1080)):
             video_width = 1920
 
         ## インターレース映像のみ
         if self.video_stream.recorded_program.recorded_video.video_scan_type == 'Interlaced':
             ## インターレース解除 (60i → 60p (フレームレート: 60fps))
+            ## ＊ラズパイでは1080p60でのエンコードは現状不可
             if QUALITY[quality].is_60fps is True:
                 options.append(f'-vf yadif=mode=1:parity=-1:deint=1,scale={video_width}:{video_height}')
                 options.append(f'-r 60000/1001 -g {int(self.GOP_LENGTH_SECOND * 60)}')
@@ -692,14 +716,14 @@ class VideoEncodingTask:
                 os.close(tsreadex_write_pipe)
 
                 # FFmpeg
-                if ENCODER_TYPE == 'FFmpeg':
+                if ENCODER_TYPE == 'FFmpeg' or ENCODER_TYPE == 'FFmpeg-RPi-HW':
                     # オプションを取得
-                    encoder_options = self.buildFFmpegOptions(self.video_stream.quality, output_ts_offset)
+                    encoder_options = self.buildFFmpegOptions(self.video_stream.quality, ENCODER_TYPE, output_ts_offset)
                     logging.info(f'{self.video_stream.log_prefix} FFmpeg Commands:\nffmpeg {" ".join(encoder_options)}')
 
                     # エンコーダープロセスを作成・実行
                     self._encoder_process = await asyncio.subprocess.create_subprocess_exec(
-                        LIBRARY_PATH['FFmpeg'], *encoder_options,
+                        LIBRARY_PATH[ENCODER_TYPE], *encoder_options,
                         stdin = tsreadex_read_pipe,  # tsreadex からの入力
                         stdout = asyncio.subprocess.PIPE,  # ストリーム出力
                         stderr = asyncio.subprocess.PIPE,  # ストリーム出力

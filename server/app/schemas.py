@@ -560,4 +560,4 @@ class VersionInformation(BaseModel):
     latest_version: str | None
     environment: Literal['Windows', 'Linux', 'Linux-Docker', 'Linux-ARM']
     backend: Literal['EDCB', 'Mirakurun']
-    encoder: Literal['FFmpeg', 'QSVEncC', 'NVEncC', 'VCEEncC', 'rkmppenc']
+    encoder: Literal['FFmpeg', 'FFmpeg-RPi-HW', 'QSVEncC', 'NVEncC', 'VCEEncC', 'rkmppenc']
