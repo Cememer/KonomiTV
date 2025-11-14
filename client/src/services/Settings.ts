@@ -97,7 +97,7 @@ export interface IServerSettings {
         always_receive_tv_from_mirakurun: boolean;
         edcb_url: string;
         mirakurun_url: string;
-        encoder: 'FFmpeg' | 'QSVEncC' | 'NVEncC' | 'VCEEncC' | 'rkmppenc';
+        encoder: 'FFmpeg-RPi-HW' | 'FFmpeg' | 'QSVEncC' | 'NVEncC' | 'VCEEncC' | 'rkmppenc';
         program_update_interval: number;
         debug: boolean;
         debug_encoder: boolean;
@@ -126,7 +126,7 @@ export const IServerSettingsDefault: IServerSettings = {
         always_receive_tv_from_mirakurun: false,
         edcb_url: 'tcp://127.0.0.1:4510/',
         mirakurun_url: 'http://127.0.0.1:40772/',
-        encoder: 'FFmpeg',
+        encoder: 'FFmpeg-RPi-HW',
         program_update_interval: 5.0,
         debug: false,
         debug_encoder: false,

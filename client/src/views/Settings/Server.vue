@@ -70,9 +70,17 @@
                     QSVEncC・NVEncC・VCEEncC・rkmppenc はハードウェアエンコーダーです。<br>
                     CPU 負荷が低く、パフォーマンスがとても高いです（おすすめ）。<br>
                 </div>
+                <div class="settings__item-label mt-2">
+                    FFmpeg-RPi-HWは、FFmpeg経由でRaspberry Piのハードウェアエンコーダーを利用します。<br>
+                    有志がカスタムしたFFmpeg(jc-kynesim/rpi-ffmpeg)により、Pi 4でも1080p 30fpsまでは実用的にストリーミング視聴することが可能になります！<br>
+                    CPU/GPUに多大な負荷がかかるため、CPUファンの取り付けやオーバークロックを行うことをおすすめします。<br>
+                    ＊1080p (60fps)と通信節約モード(HEVCエンコード)には非対応です。また、4K/8K(H.265/HEVC)放送は検証していません。<br>
+                    ＊Pi 5はハードウェアエンコーダー非搭載のため利用できません。Pi 3は性能的に厳しいと思われます。<br>
+                </div>
                 <v-select class="settings__item-form" color="primary" variant="outlined" hide-details
                     :density="is_form_dense ? 'compact' : 'default'"
                     :items="[
+                        {title: 'FFmpeg-RPi-HW : Raspberry Pi 4系SBCで利用可能', value: 'FFmpeg-RPi-HW'},
                         {title: 'FFmpeg : ソフトウェアエンコーダー', value: 'FFmpeg'},
                         {title: 'QSVEncC : Intel Graphics 搭載 CPU / Intel Arc GPU で利用可能', value: 'QSVEncC'},
                         {title: 'NVEncC : NVIDIA GPU で利用可能', value: 'NVEncC'},
