@@ -131,11 +131,11 @@ class VideoEncodingTask:
 
         ## ビットレートと品質
         options.append(f'-vb {QUALITY[quality].video_bitrate} -maxrate {QUALITY[quality].video_bitrate_max}')
-        options.append('-aspect 16:9')
+        options.append('-aspect 16:9 -pix_fmt:v yuv420p')
 
         ## v4l2m2mで非対応なオプション
         if encoder_type == 'FFmpeg':
-            options.append('-flags +cgop+global_header -preset veryfast -pix_fmt:v yuv420p')
+            options.append('-flags +cgop+global_header -preset veryfast')
             if QUALITY[quality].is_hevc is True:
                 options.append('-profile:v main')
             else:

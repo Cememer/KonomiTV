@@ -178,7 +178,7 @@ class LiveEncodingTask:
 
         ## ビットレートと品質
         options.append(f'-flags +cgop -vb {QUALITY[quality].video_bitrate} -maxrate {QUALITY[quality].video_bitrate_max}')
-        options.append('-aspect 16:9')
+        options.append('-aspect 16:9 -pix_fmt:v yuv420p')
 
         ## Preset / Profile系はv4l2m2mは非対応
         if encoder_type == 'FFmpeg':
