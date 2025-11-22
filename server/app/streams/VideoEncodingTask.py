@@ -154,6 +154,10 @@ class VideoEncodingTask:
              self.video_stream.recorded_program.recorded_video.video_resolution_height == 1080)):
             video_width = 1920
 
+        ## ラズパイで60fpsでのエンコード時にレベルを設定し、60fpsでの出力ができるようにする (カスタム版FFmpegのみ対応)
+        if encoder_type == 'FFmpeg-RPi-HW' and QUALITY[quality].is_60fps is True:
+            options.append('-level:v 42')
+
         ## インターレース映像のみ
         if self.video_stream.recorded_program.recorded_video.video_scan_type == 'Interlaced':
             ## インターレース解除 (60i → 60p (フレームレート: 60fps))

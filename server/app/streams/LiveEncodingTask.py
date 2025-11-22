@@ -203,6 +203,10 @@ class LiveEncodingTask:
             ## H.265/HEVC では高圧縮化のため、最大 GOP 長を長くする
             gop_length_second = self.GOP_LENGTH_SECONDS_H265
 
+        ## ラズパイで60fpsでのエンコード時にレベルを設定し、60fpsでの出力ができるようにする (カスタム版FFmpegのみ対応)
+        if encoder_type == 'FFmpeg-RPi-HW' and QUALITY[quality].is_60fps is True:
+            options.append('-level:v 42')
+
         ## BS4K は 60p (プログレッシブ) で放送されているので、インターレース解除を行わず 60fps でエンコードする
         if channel_type == "BS4K":
             options.append(f'-vf scale={video_width}:{video_height}')
