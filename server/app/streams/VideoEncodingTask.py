@@ -159,7 +159,9 @@ class VideoEncodingTask:
             options.append('-level:v 42')
 
         ## インターレース映像のみ
-        if self.video_stream.recorded_program.recorded_video.video_scan_type == 'Interlaced':
+        ## メタデータ解析でプログレッシブ判定がうまく動作してなさそうなので、一旦MPEG-2以外はプログレッシブとみなす
+        if self.video_stream.recorded_program.recorded_video.video_scan_type == 'Interlaced' and \
+           self.video_stream.recorded_program.recorded_video.video_codec == 'MPEG-2':
             ## インターレース解除 (60i → 60p (フレームレート: 60fps))
             ## ＊ラズパイでは1080p60でのエンコードは現状不可
             if QUALITY[quality].is_60fps is True:
@@ -170,11 +172,12 @@ class VideoEncodingTask:
                 options.append(f'-vf yadif=mode=0:parity=-1:deint=1,scale={video_width}:{video_height}')
                 options.append(f'-r 30000/1001 -g {int(self.GOP_LENGTH_SECOND * 30)}')
         ## プログレッシブ映像
-        ## プログレッシブ映像の場合は 60fps 化する方法はないため、無視して入力ファイルと同じ fps でエンコードする
-        elif self.video_stream.recorded_program.recorded_video.video_scan_type == 'Progressive':
-            int_fps = math.ceil(self.video_stream.recorded_program.recorded_video.video_frame_rate)  # 29.97 -> 30
+        else:
             options.append(f'-vf scale={video_width}:{video_height}')
-            options.append(f'-g {int(self.GOP_LENGTH_SECOND * int_fps)}')
+            if QUALITY[quality].is_60fps is True:
+                options.append(f'-g {int(self.GOP_LENGTH_SECOND * 60)} -r 60000/1001')
+            else:
+                options.append(f'-g {int(self.GOP_LENGTH_SECOND * 30)} -r 30000/1001')
 
         # 音声
         ## 音声が 5.1ch かどうかに関わらず、ステレオにダウンミックスする

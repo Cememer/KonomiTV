@@ -207,10 +207,13 @@ class LiveEncodingTask:
         if encoder_type == 'FFmpeg-RPi-HW' and QUALITY[quality].is_60fps is True:
             options.append('-level:v 42')
 
-        ## BS4K は 60p (プログレッシブ) で放送されているので、インターレース解除を行わず 60fps でエンコードする
+        ## BS4K は 60p (プログレッシブ) で放送されているので、インターレース解除を行わない
         if channel_type == "BS4K":
             options.append(f'-vf scale={video_width}:{video_height}')
-            options.append(f'-r 60000/1001 -g {int(gop_length_second * 60)}')
+            if QUALITY[quality].is_60fps is True:
+                options.append(f'-g {int(gop_length_second * 60)} -r 60000/1001')
+            else:
+                options.append(f'-g {int(gop_length_second * 30)} -r 30000/1001')
         else:
             ## インターレース解除 (60i → 60p (フレームレート: 60fps))
             ## ＊ラズパイでは1080p60でのエンコードは現状不可
