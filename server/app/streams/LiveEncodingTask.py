@@ -190,11 +190,14 @@ class LiveEncodingTask:
 
         ## 指定された品質の解像度が 1440×1080 (1080p) の場合のみ、
         ## 特別に縦解像度を 1920 に変更してフル HD (1920×1080) でエンコードする
-        ## ラズパイのハードウェアエンコーダーではaspectが効かない？ので、フルHDチャンネルでは無くても1920×1080でエンコードする
         video_width = QUALITY[quality].width
         video_height = QUALITY[quality].height
-        if video_width == 1440 and video_height == 1080 and (encoder_type == 'FFmpeg-RPi-HW' or is_fullhd_channel is True):
+        if video_width == 1440 and video_height == 1080 and (is_fullhd_channel is True):
             video_width = 1920
+        else:
+            ## ラズパイのハードウェアエンコーダーではアスペクト比設定ができないので、bsfで正しいSARを設定
+            if encoder_type == 'FFmpeg-RPi-HW':
+                options.append(f'-bsf:v h264_metadata=sample_aspect_ratio=4/3')
 
         ## 最大 GOP 長 (秒)
         ## 30fps なら ×30 、 60fps なら ×60 された値が --gop-len で使われる
@@ -215,14 +218,15 @@ class LiveEncodingTask:
             else:
                 options.append(f'-g {int(gop_length_second * 30)} -r 30000/1001')
         else:
+            ## ラズパイではbwdifフィルターの方がパフォーマンスが良いので、そちらを使う
+            deintlace_filter = 'bwdif' if encoder_type == 'FFmpeg-RPi-HW' else 'yadif'
             ## インターレース解除 (60i → 60p (フレームレート: 60fps))
-            ## ＊ラズパイでは1080p60でのエンコードは現状不可
             if QUALITY[quality].is_60fps is True:
-                options.append(f'-vf yadif=mode=1:parity=-1:deint=1,scale={video_width}:{video_height}')
+                options.append(f'-vf {deintlace_filter}=mode=1:parity=-1:deint=1,scale={video_width}:{video_height}')
                 options.append(f'-r 60000/1001 -g {int(gop_length_second * 60)}')
             ## インターレース解除 (60i → 30p (フレームレート: 30fps))
             else:
-                options.append(f'-vf yadif=mode=0:parity=-1:deint=1,scale={video_width}:{video_height}')
+                options.append(f'-vf {deintlace_filter}=mode=0:parity=-1:deint=1,scale={video_width}:{video_height}')
                 options.append(f'-r 30000/1001 -g {int(gop_length_second * 30)}')
 
         # 音声

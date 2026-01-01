@@ -145,31 +145,35 @@ class VideoEncodingTask:
 
         ## 指定された品質の解像度が 1440×1080 (1080p) かつ入力ストリームがフル HD (1920×1080) の場合のみ、
         ## 特別に縦解像度を 1920 に変更してフル HD (1920×1080) でエンコードする
-        ## ラズパイのハードウェアエンコーダーではaspectが効かない？ので、フルHDチャンネルでは無くても1920×1080でエンコードする
         video_width = QUALITY[quality].width
         video_height = QUALITY[quality].height
         if (video_width == 1440 and video_height == 1080) and \
-            (encoder_type == 'FFmpeg-RPi-HW' or \
             (self.video_stream.recorded_program.recorded_video.video_resolution_width == 1920 and \
-             self.video_stream.recorded_program.recorded_video.video_resolution_height == 1080)):
+             self.video_stream.recorded_program.recorded_video.video_resolution_height == 1080):
             video_width = 1920
+        else:
+            ## ラズパイのハードウェアエンコーダーではアスペクト比設定ができないので、bsfで正しいSARを設定
+            if encoder_type == 'FFmpeg-RPi-HW':
+                options.append(f'-bsf:v h264_metadata=sample_aspect_ratio=4/3')
 
         ## ラズパイで60fpsでのエンコード時にレベルを設定し、60fpsでの出力ができるようにする (カスタム版FFmpegのみ対応)
         if encoder_type == 'FFmpeg-RPi-HW' and QUALITY[quality].is_60fps is True:
             options.append('-level:v 42')
 
         ## インターレース映像のみ
+        ## ラズパイではbwdifフィルターの方がパフォーマンスが良いので、そちらを使う
+        deintlace_filter = 'bwdif' if encoder_type == 'FFmpeg-RPi-HW' else 'yadif'
         ## メタデータ解析でプログレッシブ判定がうまく動作してなさそうなので、一旦MPEG-2以外はプログレッシブとみなす
         if self.video_stream.recorded_program.recorded_video.video_scan_type == 'Interlaced' and \
            self.video_stream.recorded_program.recorded_video.video_codec == 'MPEG-2':
             ## インターレース解除 (60i → 60p (フレームレート: 60fps))
             ## ＊ラズパイでは1080p60でのエンコードは現状不可
             if QUALITY[quality].is_60fps is True:
-                options.append(f'-vf yadif=mode=1:parity=-1:deint=1,scale={video_width}:{video_height}')
+                options.append(f'-vf {deintlace_filter}=mode=1:parity=-1:deint=1,scale={video_width}:{video_height}')
                 options.append(f'-r 60000/1001 -g {int(self.GOP_LENGTH_SECOND * 60)}')
             ## インターレース解除 (60i → 30p (フレームレート: 30fps))
             else:
-                options.append(f'-vf yadif=mode=0:parity=-1:deint=1,scale={video_width}:{video_height}')
+                options.append(f'-vf {deintlace_filter}=mode=0:parity=-1:deint=1,scale={video_width}:{video_height}')
                 options.append(f'-r 30000/1001 -g {int(self.GOP_LENGTH_SECOND * 30)}')
         ## プログレッシブ映像
         else:
